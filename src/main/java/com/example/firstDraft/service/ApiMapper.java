@@ -2,11 +2,13 @@ package com.example.firstDraft.service;
 
 import com.example.firstDraft.dto.AlertHistoryResponse;
 import com.example.firstDraft.dto.AlertResponse;
+import com.example.firstDraft.dto.RuleAuditHistoryResponse;
 import com.example.firstDraft.dto.RuleResponse;
 import com.example.firstDraft.dto.TransactionResponse;
 import com.example.firstDraft.entity.Alert;
 import com.example.firstDraft.entity.AlertHistory;
 import com.example.firstDraft.entity.MonitoringRule;
+import com.example.firstDraft.entity.RuleAuditHistory;
 import com.example.firstDraft.entity.TransactionRecord;
 
 import java.util.List;
@@ -90,6 +92,18 @@ public final class ApiMapper {
             rule.getAmountThreshold(),
             rule.getTransactionCountThreshold(),
             rule.getTimeWindowMinutes()
+        );
+    }
+
+    public static RuleAuditHistoryResponse toRuleAuditHistoryResponse(RuleAuditHistory history) {
+        return new RuleAuditHistoryResponse(
+            history.getId(),
+            history.getRuleId(),
+            history.getAction(),
+            history.getPreviousValues(),
+            history.getNewValues(),
+            history.getChangedAt(),
+            history.getChangedBy()
         );
     }
 }

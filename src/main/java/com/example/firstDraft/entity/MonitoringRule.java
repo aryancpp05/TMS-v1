@@ -9,9 +9,11 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 
 @Entity
 @Table(name = "monitoring_rules")
@@ -41,6 +43,16 @@ public class MonitoringRule {
     private Integer transactionCountThreshold;
 
     private Integer timeWindowMinutes;
+
+    @Column(nullable = false, updatable = false)
+    private Instant createdAt;
+
+    @PrePersist
+    void onCreate() {
+        if (createdAt == null) {
+            createdAt = Instant.now();
+        }
+    }
 
     public Long getId() {
         return id;
@@ -101,5 +113,8 @@ public class MonitoringRule {
     public void setTimeWindowMinutes(Integer timeWindowMinutes) {
         this.timeWindowMinutes = timeWindowMinutes;
     }
-}
 
+    public Instant getCreatedAt() {
+        return createdAt;
+    }
+}

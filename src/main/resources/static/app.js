@@ -1,5 +1,8 @@
 const { useEffect, useMemo, useState } = React;
 
+const RULE_TYPES = ['AMOUNT_THRESHOLD', 'VELOCITY', 'NEW_PAYEE', 'DAILY_LIMIT'];
+const SEVERITIES = ['HIGH', 'MEDIUM', 'LOW'];
+
 const api = {
   get: (path) => fetch(path).then(async (res) => {
     if (!res.ok) {
@@ -67,20 +70,73 @@ function App() {
 
   const [txFilter, setTxFilter] = useState({ search: '', accountId: '', status: '' });
   const [alertFilter, setAlertFilter] = useState({ status: '', severity: '', activeOnly: true });
+  const [rulesLoading, setRulesLoading] = useState(false);
+  const [rulesError, setRulesError] = useState('');
+  const [ruleFormMode, setRuleFormMode] = useState('create');
+  const [editingRuleId, setEditingRuleId] = useState(null);
+  const [ruleForm, setRuleForm] = useState(getDefaultRuleForm());
+
+  function getDefaultRuleForm() {
+    return {
+      name: '',
+      type: 'AMOUNT_THRESHOLD',
+      severity: 'HIGH',
+      active: true,
+      amountThreshold: '',
+      transactionCountThreshold: '',
+      timeWindowMinutes: ''
+    };
+  }
+
+  function normalizeRulePayload(form) {
+    const payload = {
+      name: form.name.trim(),
+      type: form.type,
+      severity: form.severity,
+      active: !!form.active,
+      amountThreshold: null,
+      transactionCountThreshold: null,
+      timeWindowMinutes: null
+    };
+
+    if (form.type === 'AMOUNT_THRESHOLD' || form.type === 'DAILY_LIMIT') {
+      payload.amountThreshold = form.amountThreshold === '' ? null : Number(form.amountThreshold);
+    }
+
+    if (form.type === 'VELOCITY') {
+      payload.transactionCountThreshold = form.transactionCountThreshold === '' ? null : Number(form.transactionCountThreshold);
+      payload.timeWindowMinutes = form.timeWindowMinutes === '' ? null : Number(form.timeWindowMinutes);
+    }
+
+    return payload;
+  }
+
+  const loadRules = async () => {
+    setRulesLoading(true);
+    setRulesError('');
+    try {
+      const ruleData = await api.get('/api/rules');
+      setRules(ruleData);
+    } catch (e) {
+      setRulesError(e.message);
+      throw e;
+    } finally {
+      setRulesLoading(false);
+    }
+  };
 
   const loadAll = async () => {
     try {
       setError('');
-      const [summaryData, txData, alertData, ruleData] = await Promise.all([
+      const [summaryData, txData, alertData] = await Promise.all([
         api.get('/api/dashboard/summary'),
         api.get('/api/transactions'),
-        api.get('/api/alerts?activeOnly=true'),
-        api.get('/api/rules')
+        api.get('/api/alerts?activeOnly=true')
       ]);
       setSummary(summaryData);
       setTransactions(txData);
       setAlerts(alertData);
-      setRules(ruleData);
+      await loadRules();
       if (selectedAlert) {
         const refreshed = await api.get(`/api/alerts/${selectedAlert.id}`);
         setSelectedAlert(refreshed);
@@ -220,20 +276,62 @@ function App() {
     }
   };
 
-  const updateRule = async (rule) => {
+  const startCreateRule = () => {
+    setRuleFormMode('create');
+    setEditingRuleId(null);
+    setRuleForm(getDefaultRuleForm());
+    setRulesError('');
+  };
+
+  const startEditRule = (rule) => {
+    setRuleFormMode('edit');
+    setEditingRuleId(rule.id);
+    setRuleForm({
+      name: rule.name || '',
+      type: rule.type || 'AMOUNT_THRESHOLD',
+      severity: rule.severity || 'HIGH',
+      active: !!rule.active,
+      amountThreshold: rule.amountThreshold ?? '',
+      transactionCountThreshold: rule.transactionCountThreshold ?? '',
+      timeWindowMinutes: rule.timeWindowMinutes ?? ''
+    });
+    setRulesError('');
+  };
+
+  const handleRuleTypeChange = (newType) => {
+    setRuleForm((prev) => ({
+      ...prev,
+      type: newType,
+      amountThreshold: newType === 'AMOUNT_THRESHOLD' || newType === 'DAILY_LIMIT' ? prev.amountThreshold : '',
+      transactionCountThreshold: newType === 'VELOCITY' ? prev.transactionCountThreshold : '',
+      timeWindowMinutes: newType === 'VELOCITY' ? prev.timeWindowMinutes : ''
+    }));
+  };
+
+  const submitRuleForm = async (event) => {
+    event.preventDefault();
     try {
-      setError('');
-      await api.put(`/api/rules/${rule.id}`, {
-        severity: rule.severity,
-        active: rule.active,
-        amountThreshold: rule.amountThreshold,
-        transactionCountThreshold: rule.transactionCountThreshold,
-        timeWindowMinutes: rule.timeWindowMinutes
-      });
-      const freshRules = await api.get('/api/rules');
-      setRules(freshRules);
+      setRulesError('');
+      const payload = normalizeRulePayload(ruleForm);
+      if (ruleFormMode === 'create') {
+        await api.post('/api/rules', payload);
+      } else if (editingRuleId != null) {
+        await api.put(`/api/rules/${editingRuleId}`, payload);
+      }
+      await loadRules();
+      startCreateRule();
     } catch (e) {
-      setError(e.message);
+      setRulesError(e.message);
+    }
+  };
+
+  const toggleRuleStatus = async (rule) => {
+    try {
+      setRulesError('');
+      await api.patch(`/api/rules/${rule.id}/status`, { active: !rule.active });
+      await loadRules();
+    } catch (e) {
+      setRulesError(e.message);
     }
   };
 
@@ -430,38 +528,131 @@ function App() {
       )}
 
       {tab === 'rules' && (
-        <div className="panel">
-          <h3>Monitoring Rules</h3>
-          <table>
-            <thead>
-            <tr>
-              <th>Name</th><th>Type</th><th>Severity</th><th>Active</th><th>Amount Threshold</th><th>Tx Count</th><th>Window (min)</th><th>Save</th>
-            </tr>
-            </thead>
-            <tbody>
-            {rules.map(rule => (
-              <tr key={rule.id}>
-                <td>{rule.name}</td>
-                <td>{rule.type}</td>
-                <td>
-                  <select value={rule.severity} onChange={e => setRules(rules.map(r => r.id === rule.id ? { ...r, severity: e.target.value } : r))}>
-                    <option value="HIGH">HIGH</option>
-                    <option value="MEDIUM">MEDIUM</option>
-                    <option value="LOW">LOW</option>
-                  </select>
-                </td>
-                <td>
-                  <input type="checkbox" checked={rule.active} onChange={e => setRules(rules.map(r => r.id === rule.id ? { ...r, active: e.target.checked } : r))} />
-                </td>
-                <td><input type="number" step="0.01" value={rule.amountThreshold || ''} onChange={e => setRules(rules.map(r => r.id === rule.id ? { ...r, amountThreshold: e.target.value === '' ? null : Number(e.target.value) } : r))} /></td>
-                <td><input type="number" value={rule.transactionCountThreshold || ''} onChange={e => setRules(rules.map(r => r.id === rule.id ? { ...r, transactionCountThreshold: e.target.value === '' ? null : Number(e.target.value) } : r))} /></td>
-                <td><input type="number" value={rule.timeWindowMinutes || ''} onChange={e => setRules(rules.map(r => r.id === rule.id ? { ...r, timeWindowMinutes: e.target.value === '' ? null : Number(e.target.value) } : r))} /></td>
-                <td><button onClick={() => updateRule(rule)}>Save</button></td>
-              </tr>
-            ))}
-            </tbody>
-          </table>
-        </div>
+        <>
+          <div className="panel">
+            <div className="rules-header-row">
+              <h3>Monitoring Rules</h3>
+              <div className="row-actions">
+                <button onClick={loadRules}>Reload Rules</button>
+                <button className="primary" onClick={startCreateRule}>Create Rule</button>
+              </div>
+            </div>
+
+            {rulesError && <div className="error">{rulesError}</div>}
+            {rulesLoading && <div className="small">Loading rules...</div>}
+
+            {!rulesLoading && rules.length === 0 && (
+              <div className="empty-state">
+                <strong>No monitoring rules yet.</strong>
+                <div className="small">Create your first rule to start monitoring transactions.</div>
+              </div>
+            )}
+
+            {!rulesLoading && rules.length > 0 && (
+              <table>
+                <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Type</th>
+                  <th>Severity</th>
+                  <th>Status</th>
+                  <th>Created</th>
+                  <th>Actions</th>
+                </tr>
+                </thead>
+                <tbody>
+                {rules.map(rule => (
+                  <tr key={rule.id}>
+                    <td>{rule.name}</td>
+                    <td>{rule.type}</td>
+                    <td>{rule.severity}</td>
+                    <td><span className={`badge ${rule.active ? 'ACTIVE' : 'INACTIVE'}`}>{rule.active ? 'ACTIVE' : 'INACTIVE'}</span></td>
+                    <td>{rule.createdAt ? new Date(rule.createdAt).toLocaleString() : '-'}</td>
+                    <td>
+                      <div className="row-actions">
+                        <button onClick={() => startEditRule(rule)}>Edit</button>
+                        <button onClick={() => toggleRuleStatus(rule)}>{rule.active ? 'Disable' : 'Enable'}</button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+
+          <div className="panel">
+            <h3>{ruleFormMode === 'create' ? 'Create Rule' : `Edit Rule #${editingRuleId}`}</h3>
+            <form onSubmit={submitRuleForm}>
+              <div className="filters">
+                <input
+                  placeholder="Rule name"
+                  value={ruleForm.name}
+                  onChange={e => setRuleForm({ ...ruleForm, name: e.target.value })}
+                  required
+                />
+                <select value={ruleForm.type} onChange={e => handleRuleTypeChange(e.target.value)}>
+                  {RULE_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                </select>
+                <select value={ruleForm.severity} onChange={e => setRuleForm({ ...ruleForm, severity: e.target.value })}>
+                  {SEVERITIES.map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+                <label className="checkbox-inline">
+                  <input
+                    type="checkbox"
+                    checked={ruleForm.active}
+                    onChange={e => setRuleForm({ ...ruleForm, active: e.target.checked })}
+                  />
+                  Active
+                </label>
+              </div>
+
+              {(ruleForm.type === 'AMOUNT_THRESHOLD' || ruleForm.type === 'DAILY_LIMIT') && (
+                <div className="filters">
+                  <input
+                    type="number"
+                    min="0.01"
+                    step="0.01"
+                    placeholder={ruleForm.type === 'DAILY_LIMIT' ? 'Daily amount limit' : 'Amount threshold'}
+                    value={ruleForm.amountThreshold}
+                    onChange={e => setRuleForm({ ...ruleForm, amountThreshold: e.target.value })}
+                    required
+                  />
+                </div>
+              )}
+
+              {ruleForm.type === 'VELOCITY' && (
+                <div className="filters">
+                  <input
+                    type="number"
+                    min="1"
+                    placeholder="Transaction count threshold"
+                    value={ruleForm.transactionCountThreshold}
+                    onChange={e => setRuleForm({ ...ruleForm, transactionCountThreshold: e.target.value })}
+                    required
+                  />
+                  <input
+                    type="number"
+                    min="1"
+                    placeholder="Time window (minutes)"
+                    value={ruleForm.timeWindowMinutes}
+                    onChange={e => setRuleForm({ ...ruleForm, timeWindowMinutes: e.target.value })}
+                    required
+                  />
+                </div>
+              )}
+
+              {ruleForm.type === 'NEW_PAYEE' && (
+                <p className="small">No additional configuration is required for New Payee rules.</p>
+              )}
+
+              <div className="row-actions" style={{ marginTop: 12 }}>
+                <button className="primary" type="submit">{ruleFormMode === 'create' ? 'Create Rule' : 'Save Changes'}</button>
+                {ruleFormMode === 'edit' && <button type="button" onClick={startCreateRule}>Cancel Edit</button>}
+              </div>
+            </form>
+          </div>
+        </>
       )}
     </div>
   );
