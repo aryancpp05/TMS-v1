@@ -9,6 +9,7 @@ public record AlertHistoryResponse(
     AlertStatus fromStatus,
     AlertStatus toStatus,
     String note,
+    String changedBy,
     Instant createdAt
 ) {
 }

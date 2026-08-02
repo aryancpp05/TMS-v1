@@ -28,8 +28,8 @@ public class AlertService {
     );
 
     private static final Map<AlertStatus, Set<AlertStatus>> VALID_TRANSITIONS = Map.of(
-        AlertStatus.OPEN, Set.of(AlertStatus.ACKNOWLEDGED, AlertStatus.DISMISSED),
-        AlertStatus.ACKNOWLEDGED, Set.of(AlertStatus.INVESTIGATING, AlertStatus.DISMISSED),
+        AlertStatus.OPEN, Set.of(AlertStatus.ACKNOWLEDGED, AlertStatus.INVESTIGATING, AlertStatus.CLOSED, AlertStatus.DISMISSED),
+        AlertStatus.ACKNOWLEDGED, Set.of(AlertStatus.INVESTIGATING, AlertStatus.CLOSED, AlertStatus.DISMISSED),
         AlertStatus.INVESTIGATING, Set.of(AlertStatus.CLOSED, AlertStatus.DISMISSED),
         AlertStatus.CLOSED, Set.of(),
         AlertStatus.DISMISSED, Set.of()
@@ -71,20 +71,23 @@ public class AlertService {
             );
         }
 
-        AlertStatus previousStatus = alert.getStatus();
-        alert.setStatus(request.status());
-        alert.setUpdatedAt(Instant.now());
-        alertRepository.save(alert);
-
-        AlertHistory history = new AlertHistory();
-        history.setAlert(alert);
-        history.setFromStatus(previousStatus);
-        history.setToStatus(request.status());
-        history.setNote(request.note() == null || request.note().isBlank() ? "Status updated" : request.note());
-        history.setCreatedAt(Instant.now());
-        alertHistoryRepository.save(history);
+        transitionAlert(alert, request.status(), request.operatorId().trim(), normalizeNote(request.note(), "Status updated"));
 
         return toAlertResponse(alert);
+    }
+
+    @Transactional
+    public void resolveAlertsForTransactionDecision(Long transactionId, String operatorId, boolean approved, String note) {
+        String actor = operatorId == null || operatorId.isBlank() ? "system" : operatorId.trim();
+        AlertStatus nextStatus = approved ? AlertStatus.CLOSED : AlertStatus.DISMISSED;
+        String defaultNote = approved
+            ? "Transaction approved. Alert closed by decision workflow."
+            : "Transaction rejected. Alert dismissed by decision workflow.";
+
+        List<Alert> alerts = alertRepository.findActiveByTriggeringTransactionId(transactionId, ACTIVE_STATUSES);
+        for (Alert alert : alerts) {
+            transitionAlert(alert, nextStatus, actor, normalizeNote(note, defaultNote));
+        }
     }
 
     public List<com.example.firstDraft.dto.AlertHistoryResponse> getHistory(Long id) {
@@ -100,6 +103,29 @@ public class AlertService {
     private AlertResponse toAlertResponse(Alert alert) {
         List<AlertHistory> history = alertHistoryRepository.findByAlertIdOrderByCreatedAtAsc(alert.getId());
         return ApiMapper.toAlertResponse(alert, history);
+    }
+
+    private void transitionAlert(Alert alert, AlertStatus nextStatus, String changedBy, String note) {
+        AlertStatus previousStatus = alert.getStatus();
+        alert.setStatus(nextStatus);
+        alert.setUpdatedAt(Instant.now());
+        alertRepository.save(alert);
+
+        AlertHistory history = new AlertHistory();
+        history.setAlert(alert);
+        history.setFromStatus(previousStatus);
+        history.setToStatus(nextStatus);
+        history.setNote(note);
+        history.setChangedBy(changedBy);
+        history.setCreatedAt(Instant.now());
+        alertHistoryRepository.save(history);
+    }
+
+    private String normalizeNote(String note, String defaultNote) {
+        if (note == null || note.isBlank()) {
+            return defaultNote;
+        }
+        return note.trim();
     }
 }
 

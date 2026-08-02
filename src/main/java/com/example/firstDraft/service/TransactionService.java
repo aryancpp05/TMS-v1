@@ -23,10 +23,16 @@ public class TransactionService {
 
     private final TransactionRepository transactionRepository;
     private final RuleEngineService ruleEngineService;
+    private final AlertService alertService;
 
-    public TransactionService(TransactionRepository transactionRepository, RuleEngineService ruleEngineService) {
+    public TransactionService(
+        TransactionRepository transactionRepository,
+        RuleEngineService ruleEngineService,
+        AlertService alertService
+    ) {
         this.transactionRepository = transactionRepository;
         this.ruleEngineService = ruleEngineService;
+        this.alertService = alertService;
     }
 
     @Transactional
@@ -92,7 +98,9 @@ public class TransactionService {
         transaction.setReviewNote(normalizeNote(request.note(), "Approved by operator"));
         transaction.setUpdatedAt(Instant.now());
 
-        return ApiMapper.toTransactionResponse(transactionRepository.save(transaction));
+        TransactionRecord saved = transactionRepository.save(transaction);
+        alertService.resolveAlertsForTransactionDecision(saved.getId(), request.operatorId(), true, request.note());
+        return ApiMapper.toTransactionResponse(saved);
     }
 
     @Transactional
@@ -110,7 +118,9 @@ public class TransactionService {
         transaction.setReviewNote(normalizeNote(request.note(), "Rejected by operator"));
         transaction.setUpdatedAt(Instant.now());
 
-        return ApiMapper.toTransactionResponse(transactionRepository.save(transaction));
+        TransactionRecord saved = transactionRepository.save(transaction);
+        alertService.resolveAlertsForTransactionDecision(saved.getId(), request.operatorId(), false, request.note());
+        return ApiMapper.toTransactionResponse(saved);
     }
 
     public TransactionResponse getById(Long id) {

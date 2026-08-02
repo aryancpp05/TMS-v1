@@ -30,5 +30,18 @@ public interface AlertRepository extends JpaRepository<Alert, Long> {
         @Param("activeOnly") boolean activeOnly,
         @Param("activeStatuses") Set<AlertStatus> activeStatuses
     );
+
+    @EntityGraph(attributePaths = {"triggeringTransactions"})
+    @Query("""
+        select distinct a from Alert a
+        join a.triggeringTransactions t
+        where t.id = :transactionId
+          and a.status in :activeStatuses
+        order by a.createdAt desc
+        """)
+    List<Alert> findActiveByTriggeringTransactionId(
+        @Param("transactionId") Long transactionId,
+        @Param("activeStatuses") Set<AlertStatus> activeStatuses
+    );
 }
 

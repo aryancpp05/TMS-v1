@@ -43,8 +43,8 @@ cd C:\Users\Administrator\Documents\firstDraft
 ```
 
 Open:
-- App: `http://localhost:8080`
-- H2 Console: `http://localhost:8080/h2-console`
+- App: `http://localhost:8081`
+- H2 Console: `http://localhost:8081/h2-console`
 
 H2 JDBC URL:
 - `jdbc:h2:mem:monitoringdb;DB_CLOSE_DELAY=-1`
@@ -79,6 +79,16 @@ H2 JDBC URL:
   "currency": "USD",
   "timestamp": "2026-08-01T10:00:00Z",
   "description": "High-value transfer"
+}
+```
+
+## Alert Status Update Payload
+
+```json
+{
+  "status": "ACKNOWLEDGED",
+  "operatorId": "op-001",
+  "note": "Review started"
 }
 ```
 

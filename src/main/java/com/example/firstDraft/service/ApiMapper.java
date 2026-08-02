@@ -52,6 +52,7 @@ public final class ApiMapper {
             history.getFromStatus(),
             history.getToStatus(),
             history.getNote(),
+            history.getChangedBy(),
             history.getCreatedAt()
         );
     }

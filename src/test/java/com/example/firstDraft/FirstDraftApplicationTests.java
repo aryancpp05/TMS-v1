@@ -191,8 +191,54 @@ class FirstDraftApplicationTests {
 	}
 
 	@Test
+	void closesRelatedAlertsWhenPendingTransactionIsApproved() {
+		TransactionResponse created = transactionService.create(new TransactionRequest(
+			"TEST-TXN-ALERT-LINK-1",
+			"ACC-ALERT-01",
+			"PAYEE-ALERT-01",
+			new BigDecimal("18000.00"),
+			"USD",
+			Instant.now(),
+			"Create alert and approve transaction"
+		));
+
+		List<Alert> before = alertRepository.findAll().stream()
+			.filter(a -> a.getTriggeringTransactions().stream().anyMatch(t -> t.getId().equals(created.id())))
+			.toList();
+		assertThat(before).isNotEmpty();
+
+		transactionService.approve(created.id(), new TransactionDecisionRequest("op-009", "Approved as valid"));
+
+		List<Alert> after = alertRepository.findAll().stream()
+			.filter(a -> a.getTriggeringTransactions().stream().anyMatch(t -> t.getId().equals(created.id())))
+			.toList();
+		assertThat(after).allMatch(a -> a.getStatus() == AlertStatus.CLOSED);
+	}
+
+	@Test
+	void dismissesRelatedAlertsWhenPendingTransactionIsRejected() {
+		TransactionResponse created = transactionService.create(new TransactionRequest(
+			"TEST-TXN-ALERT-LINK-2",
+			"ACC-ALERT-02",
+			"PAYEE-ALERT-02",
+			new BigDecimal("19000.00"),
+			"USD",
+			Instant.now(),
+			"Create alert and reject transaction"
+		));
+
+		transactionService.reject(created.id(), new TransactionDecisionRequest("op-010", "Rejected as risky"));
+
+		List<Alert> related = alertRepository.findAll().stream()
+			.filter(a -> a.getTriggeringTransactions().stream().anyMatch(t -> t.getId().equals(created.id())))
+			.toList();
+		assertThat(related).isNotEmpty();
+		assertThat(related).allMatch(a -> a.getStatus() == AlertStatus.DISMISSED);
+	}
+
+	@Test
 	void rejectsInvalidLifecycleTransition() throws Exception {
-		transactionService.create(new TransactionRequest(
+		TransactionResponse created = transactionService.create(new TransactionRequest(
 			"TEST-TXN-2",
 			"ACC-002",
 			"PAYEE-NEW",
@@ -203,13 +249,18 @@ class FirstDraftApplicationTests {
 		));
 
 		Alert alert = alertRepository.findAll().stream()
-			.filter(a -> a.getStatus() == AlertStatus.OPEN)
+			.filter(a -> a.getTriggeringTransactions().stream().anyMatch(t -> t.getId().equals(created.id())))
 			.findFirst()
 			.orElseThrow();
 
+		alertService.updateStatus(
+			alert.getId(),
+			new AlertStatusUpdateRequest(AlertStatus.CLOSED, "op-111", "closing after verification")
+		);
+
 		assertThatThrownBy(() -> alertService.updateStatus(
 			alert.getId(),
-			new AlertStatusUpdateRequest(AlertStatus.CLOSED, "invalid direct close")
+			new AlertStatusUpdateRequest(AlertStatus.ACKNOWLEDGED, "op-111", "cannot reopen closed alert")
 		)).isInstanceOf(BadRequestException.class);
 	}
 

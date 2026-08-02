@@ -37,6 +37,8 @@ public class AlertHistory {
     @Column(nullable = false, length = 1000)
     private String note;
 
+    private String changedBy;
+
     @Column(nullable = false)
     private Instant createdAt;
 
@@ -74,6 +76,14 @@ public class AlertHistory {
 
     public void setNote(String note) {
         this.note = note;
+    }
+
+    public String getChangedBy() {
+        return changedBy;
+    }
+
+    public void setChangedBy(String changedBy) {
+        this.changedBy = changedBy;
     }
 
     public Instant getCreatedAt() {

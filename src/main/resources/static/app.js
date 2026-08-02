@@ -209,6 +209,7 @@ function App() {
       setError('');
       await api.patch(`/api/alerts/${selectedAlert.id}/status`, {
         status,
+        operatorId,
         note: `Updated from UI to ${status}`
       });
       const refreshed = await api.get(`/api/alerts/${selectedAlert.id}`);
@@ -417,10 +418,10 @@ function App() {
 
               <h4>History</h4>
               <table>
-                <thead><tr><th>Time</th><th>From</th><th>To</th><th>Note</th></tr></thead>
+                <thead><tr><th>Time</th><th>From</th><th>To</th><th>By</th><th>Note</th></tr></thead>
                 <tbody>
                 {selectedAlert.history.map(h => (
-                  <tr key={h.id}><td>{new Date(h.createdAt).toLocaleString()}</td><td>{h.fromStatus || '-'}</td><td>{h.toStatus}</td><td>{h.note}</td></tr>
+                  <tr key={h.id}><td>{new Date(h.createdAt).toLocaleString()}</td><td>{h.fromStatus || '-'}</td><td>{h.toStatus}</td><td>{h.changedBy || '-'}</td><td>{h.note}</td></tr>
                 ))}
                 </tbody>
               </table>
