@@ -53,6 +53,12 @@ H2 JDBC URL:
 
 - `POST /api/transactions`
 - `GET /api/transactions`
+- `GET /api/transactions/{id}`
+- `PATCH /api/transactions/{id}/approve`
+- `PATCH /api/transactions/{id}/reject`
+- `PATCH /api/transactions/{id}/rollback/request`
+- `PATCH /api/transactions/{id}/rollback/approve`
+- `PATCH /api/transactions/{id}/rollback/reject`
 - `GET /api/alerts`
 - `GET /api/alerts/{id}`
 - `GET /api/alerts/{id}/history`

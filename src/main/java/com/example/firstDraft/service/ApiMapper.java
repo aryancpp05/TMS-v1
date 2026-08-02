@@ -25,7 +25,24 @@ public final class ApiMapper {
             transaction.getAmount(),
             transaction.getCurrency(),
             transaction.getTimestamp(),
-            transaction.getDescription()
+            transaction.getDescription(),
+            transaction.getStatus(),
+            transaction.getCreatedAt(),
+            transaction.getUpdatedAt(),
+            transaction.getReviewedBy(),
+            transaction.getReviewedAt(),
+            transaction.getReviewNote(),
+            transaction.getRollbackReasonCode(),
+            transaction.getRollbackReasonDetail(),
+            transaction.getRollbackRequestedBy(),
+            transaction.getRollbackRequestedAt(),
+            transaction.getRollbackSupportingReference(),
+            transaction.getRollbackReviewedBy(),
+            transaction.getRollbackReviewedAt(),
+            transaction.getRollbackReviewNote(),
+            transaction.getRefundedAt(),
+            transaction.getRefundTransactionId(),
+            transaction.getRefundedForTransactionId()
         );
     }
 

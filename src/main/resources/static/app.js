@@ -52,6 +52,8 @@ function App() {
   const [selectedAlert, setSelectedAlert] = useState(null);
   const [error, setError] = useState('');
   const [simCount, setSimCount] = useState(10);
+  const [operatorId, setOperatorId] = useState('op-001');
+  const [requesterId, setRequesterId] = useState('customer-001');
 
   const [txForm, setTxForm] = useState({
     reference: '',
@@ -63,7 +65,7 @@ function App() {
     description: 'Manual test transaction'
   });
 
-  const [txFilter, setTxFilter] = useState({ search: '', accountId: '' });
+  const [txFilter, setTxFilter] = useState({ search: '', accountId: '', status: '' });
   const [alertFilter, setAlertFilter] = useState({ status: '', severity: '', activeOnly: true });
 
   const loadAll = async () => {
@@ -97,9 +99,52 @@ function App() {
       const text = txFilter.search.toLowerCase();
       const textMatches = !text || t.reference.toLowerCase().includes(text) || t.description.toLowerCase().includes(text);
       const accountMatches = !txFilter.accountId || t.accountId === txFilter.accountId;
-      return textMatches && accountMatches;
+      const statusMatches = !txFilter.status || t.status === txFilter.status;
+      return textMatches && accountMatches && statusMatches;
     });
   }, [transactions, txFilter]);
+
+  const reviewTransaction = async (transactionId, approved) => {
+    try {
+      setError('');
+      const note = approved ? 'Approved after rule violation review' : 'Rejected after rule violation review';
+      await api.patch(`/api/transactions/${transactionId}/${approved ? 'approve' : 'reject'}`, {
+        operatorId,
+        note
+      });
+      await loadAll();
+    } catch (e) {
+      setError(e.message);
+    }
+  };
+
+  const requestRollback = async (transactionId) => {
+    try {
+      setError('');
+      await api.patch(`/api/transactions/${transactionId}/rollback/request`, {
+        reasonCode: 'CUSTOMER_REQUEST',
+        reasonDetail: 'Rollback requested from dashboard workflow',
+        requestedBy: requesterId,
+        supportingReference: `CASE-${transactionId}`
+      });
+      await loadAll();
+    } catch (e) {
+      setError(e.message);
+    }
+  };
+
+  const reviewRollback = async (transactionId, approved) => {
+    try {
+      setError('');
+      await api.patch(`/api/transactions/${transactionId}/rollback/${approved ? 'approve' : 'reject'}`, {
+        operatorId,
+        note: approved ? 'Rollback approved by operator' : 'Rollback rejected by operator'
+      });
+      await loadAll();
+    } catch (e) {
+      setError(e.message);
+    }
+  };
 
   const loadAlerts = async () => {
     try {
@@ -249,11 +294,22 @@ function App() {
             <div className="filters">
               <input placeholder="Search by reference/description" value={txFilter.search} onChange={e => setTxFilter({ ...txFilter, search: e.target.value })} />
               <input placeholder="Filter account" value={txFilter.accountId} onChange={e => setTxFilter({ ...txFilter, accountId: e.target.value })} />
+              <select value={txFilter.status} onChange={e => setTxFilter({ ...txFilter, status: e.target.value })}>
+                <option value="">All statuses</option>
+                <option value="COMPLETED">COMPLETED</option>
+                <option value="PENDING_APPROVAL">PENDING_APPROVAL</option>
+                <option value="REJECTED">REJECTED</option>
+                <option value="ROLLBACK_REQUESTED">ROLLBACK_REQUESTED</option>
+                <option value="ROLLBACK_REJECTED">ROLLBACK_REJECTED</option>
+                <option value="REFUNDED">REFUNDED</option>
+              </select>
+              <input placeholder="Requester ID" value={requesterId} onChange={e => setRequesterId(e.target.value)} />
+              <input placeholder="Operator ID" value={operatorId} onChange={e => setOperatorId(e.target.value)} />
             </div>
             <table>
               <thead>
               <tr>
-                <th>Ref</th><th>Account</th><th>Payee</th><th>Amount</th><th>Timestamp</th><th>Description</th>
+                <th>Ref</th><th>Account</th><th>Payee</th><th>Amount</th><th>Status</th><th>Timestamp</th><th>Description</th><th>Action</th>
               </tr>
               </thead>
               <tbody>
@@ -263,8 +319,24 @@ function App() {
                   <td>{t.accountId}</td>
                   <td>{t.payeeId}</td>
                   <td>{t.amount} {t.currency}</td>
+                  <td><span className={`badge ${t.status}`}>{t.status}</span></td>
                   <td>{new Date(t.timestamp).toLocaleString()}</td>
                   <td>{t.description}</td>
+                  <td>
+                    {t.status === 'PENDING_APPROVAL' ? (
+                      <div className="row-actions">
+                        <button onClick={() => reviewTransaction(t.id, true)}>Approve</button>
+                        <button onClick={() => reviewTransaction(t.id, false)}>Reject</button>
+                      </div>
+                    ) : t.status === 'COMPLETED' ? (
+                      <button onClick={() => requestRollback(t.id)}>Request Rollback</button>
+                    ) : t.status === 'ROLLBACK_REQUESTED' ? (
+                      <div className="row-actions">
+                        <button onClick={() => reviewRollback(t.id, true)}>Approve Rollback</button>
+                        <button onClick={() => reviewRollback(t.id, false)}>Reject Rollback</button>
+                      </div>
+                    ) : '-'}
+                  </td>
                 </tr>
               ))}
               </tbody>

@@ -38,34 +38,39 @@ public class RuleEngineService {
         this.historyRepository = historyRepository;
     }
 
-    public void evaluate(TransactionRecord transaction) {
+    public boolean evaluate(TransactionRecord transaction) {
         List<MonitoringRule> activeRules = ruleRepository.findByActiveTrue();
+        boolean violated = false;
 
         for (MonitoringRule rule : activeRules) {
-            switch (rule.getType()) {
-                case AMOUNT_THRESHOLD -> evaluateAmountRule(transaction, rule);
-                case VELOCITY -> evaluateVelocityRule(transaction, rule);
-                case NEW_PAYEE -> evaluateNewPayeeRule(transaction, rule);
-                case DAILY_LIMIT -> evaluateDailyLimitRule(transaction, rule);
-                default -> {
-                }
-            }
+            violated = switch (rule.getType()) {
+                case AMOUNT_THRESHOLD -> evaluateAmountRule(transaction, rule) || violated;
+                case VELOCITY -> evaluateVelocityRule(transaction, rule) || violated;
+                case NEW_PAYEE -> evaluateNewPayeeRule(transaction, rule) || violated;
+                case DAILY_LIMIT -> evaluateDailyLimitRule(transaction, rule) || violated;
+                default -> violated;
+            };
         }
+
+        return violated;
     }
 
-    private void evaluateAmountRule(TransactionRecord transaction, MonitoringRule rule) {
+    private boolean evaluateAmountRule(TransactionRecord transaction, MonitoringRule rule) {
         if (rule.getAmountThreshold() == null) {
-            return;
+            return false;
         }
 
         if (transaction.getAmount().compareTo(rule.getAmountThreshold()) > 0) {
             createAlert(rule, "Transaction amount exceeded threshold", List.of(transaction));
+            return true;
         }
+
+        return false;
     }
 
-    private void evaluateVelocityRule(TransactionRecord transaction, MonitoringRule rule) {
+    private boolean evaluateVelocityRule(TransactionRecord transaction, MonitoringRule rule) {
         if (rule.getTransactionCountThreshold() == null || rule.getTimeWindowMinutes() == null) {
-            return;
+            return false;
         }
 
         Instant to = transaction.getTimestamp();
@@ -76,10 +81,13 @@ public class RuleEngineService {
             List<TransactionRecord> related = transactionRepository
                 .findByAccountIdAndTimestampBetween(transaction.getAccountId(), from, to);
             createAlert(rule, "Velocity threshold exceeded for account " + transaction.getAccountId(), related);
+            return true;
         }
+
+        return false;
     }
 
-    private void evaluateNewPayeeRule(TransactionRecord transaction, MonitoringRule rule) {
+    private boolean evaluateNewPayeeRule(TransactionRecord transaction, MonitoringRule rule) {
         long previousCount = transactionRepository.countByAccountIdAndPayeeIdAndTimestampBefore(
             transaction.getAccountId(),
             transaction.getPayeeId(),
@@ -88,12 +96,15 @@ public class RuleEngineService {
 
         if (previousCount == 0) {
             createAlert(rule, "First transaction to new payee " + transaction.getPayeeId(), List.of(transaction));
+            return true;
         }
+
+        return false;
     }
 
-    private void evaluateDailyLimitRule(TransactionRecord transaction, MonitoringRule rule) {
+    private boolean evaluateDailyLimitRule(TransactionRecord transaction, MonitoringRule rule) {
         if (rule.getAmountThreshold() == null) {
-            return;
+            return false;
         }
 
         LocalDate day = LocalDate.ofInstant(transaction.getTimestamp(), ZoneOffset.UTC);
@@ -108,7 +119,10 @@ public class RuleEngineService {
 
         if (total.compareTo(rule.getAmountThreshold()) > 0) {
             createAlert(rule, "Daily limit exceeded for account " + transaction.getAccountId(), List.of(transaction));
+            return true;
         }
+
+        return false;
     }
 
     private void createAlert(MonitoringRule rule, String message, List<TransactionRecord> transactions) {

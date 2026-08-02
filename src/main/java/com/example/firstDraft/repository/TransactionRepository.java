@@ -1,6 +1,7 @@
 package com.example.firstDraft.repository;
 
 import com.example.firstDraft.entity.TransactionRecord;
+import com.example.firstDraft.model.TransactionStatus;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -33,7 +34,8 @@ public interface TransactionRepository extends JpaRepository<TransactionRecord, 
 
     @Query("""
         select t from TransactionRecord t
-        where (:accountId is null or t.accountId = :accountId)
+        where (:status is null or t.status = :status)
+          and (:accountId is null or t.accountId = :accountId)
           and (:payeeId is null or t.payeeId = :payeeId)
           and (:fromTime is null or t.timestamp >= :fromTime)
           and (:toTime is null or t.timestamp <= :toTime)
@@ -44,6 +46,7 @@ public interface TransactionRepository extends JpaRepository<TransactionRecord, 
         order by t.timestamp desc
         """)
     List<TransactionRecord> search(
+        @Param("status") TransactionStatus status,
         @Param("accountId") String accountId,
         @Param("payeeId") String payeeId,
         @Param("fromTime") Instant fromTime,
